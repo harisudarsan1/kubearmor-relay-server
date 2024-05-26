@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -17,6 +20,16 @@ import (
 	"github.com/google/uuid"
 	kg "github.com/kubearmor/kubearmor-relay-server/relay-server/log"
 	"github.com/kubearmor/kubearmor-relay-server/relay-server/server"
+	"k8s.io/client-go/informers"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
+
+	"k8s.io/client-go/kubernetes"
+
+	"sync"
+
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -34,6 +47,63 @@ type ElasticsearchClient struct {
 	ctx         context.Context
 	alertCh     chan interface{}
 	logCh       chan interface{}
+	client      *Client
+}
+
+type PodServiceInfo struct {
+	Type           string
+	PodName        string
+	DeploymentName string
+	ServiceName    string
+}
+
+type ClusterCache struct {
+	mu         *sync.RWMutex
+	ipPodCache map[string]PodServiceInfo
+}
+
+func (cc *ClusterCache) Get(IP string) (PodServiceInfo, bool) {
+	cc.mu.RLock()
+	defer cc.mu.Unlock()
+	value, ok := cc.ipPodCache[IP]
+	return value, ok
+
+}
+func (cc *ClusterCache) Set(IP string, pi PodServiceInfo) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	kg.Printf("Received IP and cached %s", IP)
+	cc.ipPodCache[IP] = pi
+
+}
+func (cc *ClusterCache) Delete(IP string) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	delete(cc.ipPodCache, IP)
+
+}
+
+type Client struct {
+	k8sClient      *kubernetes.Clientset
+	ClusterIPCache *ClusterCache
+}
+
+func getK8sClient() *kubernetes.Clientset {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		kg.Errf("Error creating Kubernetes config: %v\n", err)
+		return nil
+	}
+	kg.Printf("Successfully created k8s config")
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		kg.Errf("Error creating Kubernetes clientset: %v\n", err)
+		return nil
+	}
+	kg.Printf("Successfully created k8sClientSet")
+	return clientset
 }
 
 // NewElasticsearchClient creates a new Elasticsearch client with the given Elasticsearch URL
@@ -72,7 +142,127 @@ func NewElasticsearchClient(esURL, Endpoint string) (*ElasticsearchClient, error
 	alertCh := make(chan interface{}, 10000)
 	logCh := make(chan interface{}, 10000)
 	kaClient := server.NewClient(Endpoint)
-	return &ElasticsearchClient{kaClient: kaClient, bulkIndexer: bi, esClient: esClient, alertCh: alertCh, logCh: logCh}, nil
+
+	k8sClient := getK8sClient()
+	cc := &ClusterCache{
+		mu: &sync.RWMutex{},
+
+		ipPodCache: make(map[string]PodServiceInfo),
+	}
+	client := &Client{
+		k8sClient:      k8sClient,
+		ClusterIPCache: cc,
+	}
+
+	go startInformers(client)
+
+	return &ElasticsearchClient{kaClient: kaClient, bulkIndexer: bi, esClient: esClient, alertCh: alertCh, logCh: logCh, client: client}, nil
+}
+
+func startInformers(client *Client) {
+
+	informerFactory := informers.NewSharedInformerFactory(client.k8sClient, time.Minute*10)
+	kg.Printf("informerFactory created")
+
+	podInformer := informerFactory.Core().V1().Pods().Informer()
+	kg.Printf("pod informers created")
+
+	// Set up event handlers for Pods
+	podInformer.AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+
+				pod := obj.(*v1.Pod)
+				deploymentName := getDeploymentNamefromPod(pod)
+				podInfo := PodServiceInfo{
+					Type:           "POD",
+					PodName:        pod.Name,
+					DeploymentName: deploymentName,
+				}
+
+				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+
+				pod := newObj.(*v1.Pod)
+				deploymentName := getDeploymentNamefromPod(pod)
+				podInfo := PodServiceInfo{
+
+					Type:           "POD",
+					PodName:        pod.Name,
+					DeploymentName: deploymentName,
+				}
+				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
+			},
+			DeleteFunc: func(obj interface{}) {
+
+				pod := obj.(*v1.Pod)
+
+				client.ClusterIPCache.Delete(pod.Status.PodIP)
+			},
+		},
+	)
+
+	// Get the Service informer
+	serviceInformer := informerFactory.Core().V1().Services().Informer()
+
+	// Set up event handlers
+	serviceInformer.AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				service := obj.(*v1.Service)
+
+				svcInfo := PodServiceInfo{
+
+					Type:           "Service",
+					ServiceName:    service.Name,
+					DeploymentName: "",
+				}
+				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				service := newObj.(*v1.Service)
+
+				svcInfo := PodServiceInfo{
+
+					Type:           "Service",
+					ServiceName:    service.Name,
+					DeploymentName: "",
+				}
+				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
+				fmt.Printf("Service Updated: %s/%s\n", service.Namespace, service.Name)
+			},
+			DeleteFunc: func(obj interface{}) {
+				service := obj.(*v1.Service)
+
+				client.ClusterIPCache.Delete(service.Spec.ClusterIP)
+				fmt.Printf("Service Deleted: %s/%s\n", service.Namespace, service.Name)
+			},
+		},
+	)
+
+	// Start the informer
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	informerFactory.Start(stopCh)
+	informerFactory.WaitForCacheSync(stopCh)
+
+	// Wait for signals to exit
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
+}
+
+func getDeploymentNamefromPod(pod *v1.Pod) string {
+	for _, ownerReference := range pod.OwnerReferences {
+		if ownerReference.Kind == "ReplicaSet" || ownerReference.Kind == "Deployment" || ownerReference.Kind == "Daemonset" {
+			// Get the deployment name from the ReplicaSet name
+			return ownerReference.Name
+		}
+	}
+
+	return "None"
 }
 
 // bulkIndex takes an interface and index name and adds the data to the Elasticsearch bulk indexer.
