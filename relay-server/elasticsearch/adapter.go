@@ -353,6 +353,35 @@ func (ecl *ElasticsearchClient) Start() error {
 				kg.Warnf("Failed to receive an log (%s)", client.Server)
 				break
 			}
+
+			if containsKprobe := strings.Contains(res.Data, "kprobe"); containsKprobe {
+
+				resourceMap := extractdata(res.GetResource())
+				remoteIP := resourceMap["remoteip"]
+				podserviceInfo, found := ecl.client.ClusterIPCache.Get(remoteIP)
+				if found {
+					switch podserviceInfo.Type {
+					case "POD":
+						resource := res.GetResource() + fmt.Sprintf(" Deploymentname:%s", podserviceInfo.DeploymentName)
+						data := res.GetData() + fmt.Sprintf(" OwnerType:pod")
+						res.Data = data
+
+						res.Resource = resource
+						kg.Printf("logData:%s", res.Data)
+						break
+					case "SERVICE":
+						resource := res.GetResource() + fmt.Sprintf(" ServiceName:%s", podserviceInfo.ServiceName)
+
+						data := res.GetData() + fmt.Sprintf(" OwnerType:service")
+						res.Data = data
+						res.Resource = resource
+						kg.Printf("logData:%s", res.Data)
+
+						break
+					}
+				}
+
+			}
 			tel, _ := json.Marshal(res)
 			fmt.Printf("%s\n", string(tel))
 			ecl.logCh <- res
