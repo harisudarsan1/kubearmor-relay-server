@@ -55,6 +55,7 @@ type PodServiceInfo struct {
 	PodName        string
 	DeploymentName string
 	ServiceName    string
+	NamespaceName  string
 }
 
 type ClusterCache struct {
@@ -64,7 +65,7 @@ type ClusterCache struct {
 
 func (cc *ClusterCache) Get(IP string) (PodServiceInfo, bool) {
 	cc.mu.RLock()
-	defer cc.mu.Unlock()
+	defer cc.mu.RUnlock()
 	value, ok := cc.ipPodCache[IP]
 	return value, ok
 
@@ -73,7 +74,17 @@ func (cc *ClusterCache) Set(IP string, pi PodServiceInfo) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
-	kg.Printf("Received IP and cached %s", IP)
+	switch pi.Type {
+	case "POD":
+
+		kg.Printf("Received IP %s and cached the host %s", IP, pi.PodName)
+		break
+	case "SERVICE":
+
+		kg.Printf("Received IP %s and cached the host %s", IP, pi.ServiceName)
+		break
+
+	}
 	cc.ipPodCache[IP] = pi
 
 }
@@ -165,6 +176,7 @@ func startInformers(client *Client) {
 	kg.Printf("informerFactory created")
 
 	podInformer := informerFactory.Core().V1().Pods().Informer()
+
 	kg.Printf("pod informers created")
 
 	// Set up event handlers for Pods
@@ -181,8 +193,8 @@ func startInformers(client *Client) {
 				}
 
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
-				
-				kg.Printf("POD Added: %s/%s, remoteIP %s\n", pod.Name, deploymentName,pod.Status.PodIP)
+
+				// kg.Printf("POD Added: %s/%s, remoteIP %s\n", pod.Name, deploymentName, pod.Status.PodIP)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 
@@ -194,10 +206,10 @@ func startInformers(client *Client) {
 					PodName:        pod.Name,
 					DeploymentName: deploymentName,
 				}
-				
+
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
-				kg.Printf("POD Updated: %s/%s, remoteIP %s\n", pod.Name, deploymentName,pod.Status.PodIP)
-				
+				// kg.Printf("POD Updated: %s/%s, remoteIP %s\n", pod.Name, deploymentName, pod.Status.PodIP)
+
 			},
 			DeleteFunc: func(obj interface{}) {
 
@@ -222,10 +234,12 @@ func startInformers(client *Client) {
 					Type:           "Service",
 					ServiceName:    service.Name,
 					DeploymentName: "",
+
+					NamespaceName: service.Namespace,
 				}
 				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
-				
-				kg.Printf("Service Added: %s/%s, remoteIP %s\n", service.Namespace, service.Name,service.Spec.ClusterIP)
+
+				// kg.Printf("Service Added: %s/%s, remoteIP %s\n", service.Namespace, service.Name, service.Spec.ClusterIP)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				service := newObj.(*v1.Service)
@@ -235,6 +249,7 @@ func startInformers(client *Client) {
 					Type:           "Service",
 					ServiceName:    service.Name,
 					DeploymentName: "",
+					NamespaceName:  service.Namespace,
 				}
 				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
 				kg.Printf("Service Updated: %s/%s\n", service.Namespace, service.Name)
@@ -263,13 +278,24 @@ func startInformers(client *Client) {
 
 func getDeploymentNamefromPod(pod *v1.Pod) string {
 	for _, ownerReference := range pod.OwnerReferences {
-		if ownerReference.Kind == "ReplicaSet" || ownerReference.Kind == "Deployment" || ownerReference.Kind == "Daemonset" {
-			// Get the deployment name from the ReplicaSet name
+		switch ownerReference.Kind {
+		case "ReplicaSet":
+			return getDeploymentNameFromReplicaSetName(ownerReference.Name)
+		case "Deployment", "DaemonSet", "StatefulSet", "Job", "CronJob", "ReplicationController":
 			return ownerReference.Name
 		}
 	}
+	return ""
+}
 
-	return "None"
+func getDeploymentNameFromReplicaSetName(replicaSetName string) string {
+	// Assuming the ReplicaSet name is in the format of `deploymentname-randomsuffix`
+	// Split the name by the last dash
+	parts := strings.Split(replicaSetName, "-")
+	if len(parts) < 2 {
+		return replicaSetName // If not in the expected format, return the original name
+	}
+	return strings.Join(parts[:len(parts)-1], "-")
 }
 
 // bulkIndex takes an interface and index name and adds the data to the Elasticsearch bulk indexer.
@@ -366,23 +392,24 @@ func (ecl *ElasticsearchClient) Start() error {
 				resourceMap := extractdata(res.GetResource())
 				remoteIP := resourceMap["remoteip"]
 				podserviceInfo, found := ecl.client.ClusterIPCache.Get(remoteIP)
+
 				if found {
 					switch podserviceInfo.Type {
 					case "POD":
-						resource := res.GetResource() + fmt.Sprintf(" Deploymentname:%s", podserviceInfo.DeploymentName)
-						data := res.GetData() + fmt.Sprintf(" OwnerType:pod")
+						resource := res.GetResource() + fmt.Sprintf(" hostname:%s podname:%s namespace:%s", podserviceInfo.DeploymentName, podserviceInfo.PodName, podserviceInfo.NamespaceName)
+						data := res.GetData() + fmt.Sprintf(" ownertype:pod")
 						res.Data = data
 
 						res.Resource = resource
-						kg.Printf("logData:%s", res.Data)
+						// kg.Printf("logData:%s", res.Data)
 						break
 					case "SERVICE":
-						resource := res.GetResource() + fmt.Sprintf(" ServiceName:%s", podserviceInfo.ServiceName)
+						resource := res.GetResource() + fmt.Sprintf(" hostname:%s namespace", podserviceInfo.ServiceName)
 
-						data := res.GetData() + fmt.Sprintf(" OwnerType:service")
+						data := res.GetData() + fmt.Sprintf(" ownertype:service")
 						res.Data = data
 						res.Resource = resource
-						kg.Printf("logData:%s", res.Data)
+						// kg.Printf("logData:%s", res.Data)
 
 						break
 					}
@@ -401,7 +428,6 @@ func (ecl *ElasticsearchClient) Start() error {
 				select {
 				case log := <-ecl.logCh:
 					ecl.bulkIndex(log, "log")
-					kg.Print("received log and indexed")
 				case <-ecl.ctx.Done():
 					close(ecl.logCh)
 					return
