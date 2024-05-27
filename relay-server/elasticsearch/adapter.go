@@ -181,6 +181,8 @@ func startInformers(client *Client) {
 				}
 
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
+				
+				kg.Printf("POD Added: %s/%s, remoteIP %s\n", pod.Name, deploymentName,pod.Status.PodIP)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 
@@ -192,7 +194,10 @@ func startInformers(client *Client) {
 					PodName:        pod.Name,
 					DeploymentName: deploymentName,
 				}
+				
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
+				kg.Printf("POD Updated: %s/%s, remoteIP %s\n", pod.Name, deploymentName,pod.Status.PodIP)
+				
 			},
 			DeleteFunc: func(obj interface{}) {
 
@@ -219,6 +224,8 @@ func startInformers(client *Client) {
 					DeploymentName: "",
 				}
 				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
+				
+				kg.Printf("Service Added: %s/%s, remoteIP %s\n", service.Namespace, service.Name,service.Spec.ClusterIP)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				service := newObj.(*v1.Service)
@@ -230,13 +237,13 @@ func startInformers(client *Client) {
 					DeploymentName: "",
 				}
 				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
-				fmt.Printf("Service Updated: %s/%s\n", service.Namespace, service.Name)
+				kg.Printf("Service Updated: %s/%s\n", service.Namespace, service.Name)
 			},
 			DeleteFunc: func(obj interface{}) {
 				service := obj.(*v1.Service)
 
 				client.ClusterIPCache.Delete(service.Spec.ClusterIP)
-				fmt.Printf("Service Deleted: %s/%s\n", service.Namespace, service.Name)
+				// kg.Printf("Service Deleted: %s/%s\n", service.Namespace, service.Name)
 			},
 		},
 	)
