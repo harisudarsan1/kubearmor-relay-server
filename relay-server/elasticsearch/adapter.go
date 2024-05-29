@@ -190,6 +190,7 @@ func startInformers(client *Client) {
 					Type:           "POD",
 					PodName:        pod.Name,
 					DeploymentName: deploymentName,
+					NamespaceName:  pod.Namespace,
 				}
 
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
@@ -205,6 +206,8 @@ func startInformers(client *Client) {
 					Type:           "POD",
 					PodName:        pod.Name,
 					DeploymentName: deploymentName,
+
+					NamespaceName: pod.Namespace,
 				}
 
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
@@ -231,9 +234,9 @@ func startInformers(client *Client) {
 
 				svcInfo := PodServiceInfo{
 
-					Type:           "Service",
+					Type:           "SERVICE",
 					ServiceName:    service.Name,
-					DeploymentName: "",
+					DeploymentName: service.Name,
 
 					NamespaceName: service.Namespace,
 				}
@@ -246,9 +249,9 @@ func startInformers(client *Client) {
 
 				svcInfo := PodServiceInfo{
 
-					Type:           "Service",
+					Type:           "SERVICE",
 					ServiceName:    service.Name,
-					DeploymentName: "",
+					DeploymentName: service.Name,
 					NamespaceName:  service.Namespace,
 				}
 				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
@@ -396,17 +399,17 @@ func (ecl *ElasticsearchClient) Start() error {
 				if found {
 					switch podserviceInfo.Type {
 					case "POD":
-						resource := res.GetResource() + fmt.Sprintf(" hostname:%s podname:%s namespace:%s", podserviceInfo.DeploymentName, podserviceInfo.PodName, podserviceInfo.NamespaceName)
-						data := res.GetData() + fmt.Sprintf(" ownertype:pod")
+						resource := res.GetResource() + fmt.Sprintf(" hostname=%s podname=%s namespace=%s", podserviceInfo.DeploymentName, podserviceInfo.PodName, podserviceInfo.NamespaceName)
+						data := res.GetData() + fmt.Sprintf(" ownertype=pod")
 						res.Data = data
 
 						res.Resource = resource
 						// kg.Printf("logData:%s", res.Data)
 						break
 					case "SERVICE":
-						resource := res.GetResource() + fmt.Sprintf(" hostname:%s namespace", podserviceInfo.ServiceName)
+						resource := res.GetResource() + fmt.Sprintf(" hostname=%s servicename=%s namespace=%s", podserviceInfo.DeploymentName, podserviceInfo.ServiceName, podserviceInfo.NamespaceName)
 
-						data := res.GetData() + fmt.Sprintf(" ownertype:service")
+						data := res.GetData() + fmt.Sprintf(" ownertype=service")
 						res.Data = data
 						res.Resource = resource
 						// kg.Printf("logData:%s", res.Data)
