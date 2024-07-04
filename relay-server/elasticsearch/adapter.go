@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	kg "github.com/kubearmor/kubearmor-relay-server/relay-server/log"
 
+	pb "github.com/kubearmor/KubeArmor/protobuf"
 	kl "github.com/kubearmor/kubearmor-relay-server/relay-server/common"
 
 	// kif "github.com/kubearmor/kubearmor-relay-server/relay-server/informers"
@@ -36,8 +37,8 @@ type ElasticsearchClient struct {
 	cancel      context.CancelFunc
 	bulkIndexer esutil.BulkIndexer
 	ctx         context.Context
-	alertCh     chan interface{}
-	logCh       chan interface{}
+	alertCh     chan *pb.Alert
+	logCh       chan *pb.Log
 	// client      *kif.Client
 }
 
@@ -74,8 +75,8 @@ func NewElasticsearchClient(esURL, Endpoint string) (*ElasticsearchClient, error
 	if err != nil {
 		log.Fatalf("Error creating the indexer: %s", err)
 	}
-	alertCh := make(chan interface{}, 10000)
-	logCh := make(chan interface{}, 10000)
+	alertCh := make(chan *pb.Alert, 10000)
+	logCh := make(chan *pb.Log, 10000)
 	kaClient := server.NewClient(Endpoint)
 
 	// k8sClient := kif.GetK8sClient()
@@ -147,7 +148,14 @@ func (ecl *ElasticsearchClient) Start() error {
 	}
 	kg.Printf("Checked the liveness of the gRPC server")
 
-	client.WgServer.Go(func() error {
+	// var wg sync.WaitGroup
+
+	// stop := make(chan struct{})
+	// errCh := make(chan error, 1)
+
+	client.WgServer.Add(1)
+	go func() error {
+		defer client.WgServer.Done()
 		for client.Running {
 			res, err := client.AlertStream.Recv()
 			if err != nil {
@@ -165,8 +173,9 @@ func (ecl *ElasticsearchClient) Start() error {
 				//not able to add it to Log buffer
 			}
 		}
+
 		return nil
-	})
+	}()
 
 	for i := 0; i < 5; i++ {
 		go func() {
@@ -181,8 +190,12 @@ func (ecl *ElasticsearchClient) Start() error {
 			}
 		}()
 	}
+	client.WgServer.Add(1)
+	go func() error {
 
-	client.WgServer.Go(func() error {
+		defer client.WgServer.Done()
+		// client.WatchLogs(&wg, stop, errCh, ecl.logCh)
+
 		for client.Running {
 			res, err := client.LogStream.Recv()
 			if err != nil {
@@ -223,8 +236,9 @@ func (ecl *ElasticsearchClient) Start() error {
 			fmt.Printf("%s\n", string(tel))
 			ecl.logCh <- res
 		}
+
 		return nil
-	})
+	}()
 
 	for i := 0; i < 5; i++ {
 		go func() {

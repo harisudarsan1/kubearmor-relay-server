@@ -16,7 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/kubearmor/KubeArmor/protobuf"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -302,7 +301,7 @@ type LogClient struct {
 	Ifclient *kif.Client
 
 	// wait group
-	WgServer *errgroup.Group
+	WgServer sync.WaitGroup
 
 	Context context.Context
 }
@@ -383,6 +382,9 @@ func NewClient(server string) *LogClient {
 	go kif.StartInformers(Informerclient)
 
 	lc.Ifclient = Informerclient
+
+	// var g errgroup.Group
+	lc.WgServer = sync.WaitGroup{}
 
 	return lc
 }
@@ -581,7 +583,6 @@ func (lc *LogClient) WatchLogs(wg *sync.WaitGroup, stop chan struct{}, errCh cha
 					}
 
 				}
-				return
 			}
 
 			select {
