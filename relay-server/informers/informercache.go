@@ -92,8 +92,12 @@ func StartInformers(client *Client) {
 	podInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
+				pod, ok := obj.(*v1.Pod)
+				if !ok {
+					kg.Errf("Failed to cast object to *v1.Pod in AddFunc: received type %T", obj)
+					return
+				}
 
-				pod := obj.(*v1.Pod)
 				deploymentName := getDeploymentNamefromPod(pod)
 				podInfo := PodServiceInfo{
 					Type:           "POD",
@@ -103,29 +107,30 @@ func StartInformers(client *Client) {
 				}
 
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
-
-				// kg.Printf("POD Added: %s/%s, remoteIP %s\n", pod.Name, deploymentName, pod.Status.PodIP)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
+				pod, ok := newObj.(*v1.Pod)
+				if !ok {
+					kg.Errf("Failed to cast object to *v1.Pod in UpdateFunc: received type %T", newObj)
+					return
+				}
 
-				pod := newObj.(*v1.Pod)
 				deploymentName := getDeploymentNamefromPod(pod)
 				podInfo := PodServiceInfo{
-
 					Type:           "POD",
 					PodName:        pod.Name,
 					DeploymentName: deploymentName,
-
-					NamespaceName: pod.Namespace,
+					NamespaceName:  pod.Namespace,
 				}
 
 				client.ClusterIPCache.Set(pod.Status.PodIP, podInfo)
-				// kg.Printf("POD Updated: %s/%s, remoteIP %s\n", pod.Name, deploymentName, pod.Status.PodIP)
-
 			},
 			DeleteFunc: func(obj interface{}) {
-
-				pod := obj.(*v1.Pod)
+				pod, ok := obj.(*v1.Pod)
+				if !ok {
+					kg.Errf("Failed to cast object to *v1.Pod in DeleteFunc: received type %T", obj)
+					return
+				}
 
 				client.ClusterIPCache.Delete(pod.Status.PodIP)
 			},
@@ -139,7 +144,11 @@ func StartInformers(client *Client) {
 	serviceInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				service := obj.(*v1.Service)
+				service, ok := obj.(*v1.Service)
+				if !ok {
+					kg.Errf("Failed to cast object to *v1.Service in AddFunc: received type %T", obj)
+					return
+				}
 
 				svcInfo := PodServiceInfo{
 
@@ -154,8 +163,11 @@ func StartInformers(client *Client) {
 				// kg.Printf("Service Added: %s/%s, remoteIP %s\n", service.Namespace, service.Name, service.Spec.ClusterIP)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				service := newObj.(*v1.Service)
-
+				service, ok := newObj.(*v1.Service)
+				if !ok {
+					kg.Errf("Failed to cast object to *v1.Service in UpdateFunc: received type %T", newObj)
+					return
+				}
 				svcInfo := PodServiceInfo{
 
 					Type:           "SERVICE",
@@ -164,10 +176,14 @@ func StartInformers(client *Client) {
 					NamespaceName:  service.Namespace,
 				}
 				client.ClusterIPCache.Set(service.Spec.ClusterIP, svcInfo)
-				kg.Printf("Service Updated: %s/%s\n", service.Namespace, service.Name)
+				// kg.Printf("Service Updated: %s/%s\n", service.Namespace, service.Name)
 			},
 			DeleteFunc: func(obj interface{}) {
-				service := obj.(*v1.Service)
+				service, ok := obj.(*v1.Service)
+				if !ok {
+					kg.Errf("Failed to cast object to *v1.Service in DeleteFunc: received type %T", obj)
+					return
+				}
 
 				client.ClusterIPCache.Delete(service.Spec.ClusterIP)
 				// kg.Printf("Service Deleted: %s/%s\n", service.Namespace, service.Name)

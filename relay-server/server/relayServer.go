@@ -681,7 +681,7 @@ func NewRelayServer(port string) *RelayServer {
 
 	if enableEsDashboards {
 		ESLogChannel = make(chan *pb.Log, 10000)
-		AlertBufferChannel = make(chan *pb.Alert, 1000)
+		ESAlertChannel = make(chan *pb.Alert, 1000)
 	}
 
 	// listen to gRPC port
