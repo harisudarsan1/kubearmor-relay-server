@@ -1,8 +1,8 @@
 module github.com/kubearmor/kubearmor-relay-server/relay-server
 
-go 1.22.0
+go 1.21.0
 
-toolchain go1.22.4
+// toolchain go1.21.4
 
 replace (
 	github.com/kubearmor/kubearmor-relay-server/relay-server => ./
@@ -16,14 +16,14 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/google/uuid v1.6.0
-	github.com/kubearmor/KubeArmor/KubeArmor v0.0.0-20240412061210-e4422dd02342
+	github.com/kubearmor/KubeArmor/KubeArmor v0.0.0-20240726081102-8129fe08d271
 	github.com/kubearmor/KubeArmor/protobuf v0.0.0-20240315075053-fee50c9428b9
 	github.com/spf13/viper v1.18.2
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.63.2
-	k8s.io/api v0.30.3
-	k8s.io/apimachinery v0.30.3
-	k8s.io/client-go v0.30.3
+	k8s.io/api v0.29.0
+	k8s.io/apimachinery v0.29.0
+	k8s.io/client-go v0.29.0
 )
 
 require (
