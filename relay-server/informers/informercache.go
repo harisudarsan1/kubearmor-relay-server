@@ -89,7 +89,7 @@ func StartInformers(client *Client) {
 	kg.Printf("pod informers created")
 
 	// Set up event handlers for Pods
-	podInformer.AddEventHandler(
+	_, err := podInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				pod, ok := obj.(*v1.Pod)
@@ -137,11 +137,16 @@ func StartInformers(client *Client) {
 		},
 	)
 
+	if err != nil {
+		kg.Errf("Failed to add Event handlers for pods: %v", err)
+		return
+	}
+
 	// Get the Service informer
 	serviceInformer := informerFactory.Core().V1().Services().Informer()
 
 	// Set up event handlers
-	serviceInformer.AddEventHandler(
+	_, err = serviceInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				service, ok := obj.(*v1.Service)
@@ -190,6 +195,11 @@ func StartInformers(client *Client) {
 			},
 		},
 	)
+
+	if err != nil {
+		kg.Errf("Failed to add Event handlers for services: %v", err)
+		return
+	}
 
 	// Start the informer
 	stopCh := make(chan struct{})
