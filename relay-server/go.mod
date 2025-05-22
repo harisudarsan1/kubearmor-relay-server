@@ -16,6 +16,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kubearmor/KubeArmor/KubeArmor v0.0.0-20240412061210-e4422dd02342
 	github.com/kubearmor/KubeArmor/protobuf v0.0.0-20240315075053-fee50c9428b9
+	github.com/opensearch-project/opensearch-go v1.1.0
 	github.com/spf13/viper v1.18.2
 	go.uber.org/zap v1.27.0
 	golang.org/x/sync v0.7.0

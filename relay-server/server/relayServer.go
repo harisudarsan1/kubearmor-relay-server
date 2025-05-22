@@ -26,6 +26,7 @@ import (
 	cfg "github.com/kubearmor/kubearmor-relay-server/relay-server/config"
 	"github.com/kubearmor/kubearmor-relay-server/relay-server/elasticsearch"
 	kg "github.com/kubearmor/kubearmor-relay-server/relay-server/log"
+	"github.com/kubearmor/kubearmor-relay-server/relay-server/opensearch"
 )
 
 // ============ //
@@ -499,6 +500,9 @@ func (rs *RelayServer) AddAlertFromBuffChan() {
 			if rs.ELKClient != nil {
 				rs.ELKClient.SendAlertToBuffer(alert)
 			}
+			if rs.OSClient != nil {
+				rs.OSClient.SendAlertToBuffer(alert)
+			}
 			AlertLock.RLock()
 			for uid := range AlertStructs {
 				select {
@@ -598,6 +602,9 @@ type RelayServer struct {
 
 	// ELK adapter
 	ELKClient *elasticsearch.ElasticsearchClient
+
+	// Opensearch Adapter
+	OSClient *opensearch.OpenSearchClient
 }
 
 // LogBufferChannel store incoming data from log stream in buffer
