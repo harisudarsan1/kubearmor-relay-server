@@ -38,9 +38,9 @@ func NewOpenSearchClient(
 	osUser := os.Getenv("OS_USERNAME")
 	osPassword := os.Getenv("OS_PASSWORD")
 	osCaCertPath := os.Getenv("OS_CA_CERT_PATH")
-
+	insecuretls := os.Getenv("OS_ALLOW_INSECURE_TLS")
 	osAllowInsecureTLS := false
-	if os.Getenv("OS_ALLOW_INSECURE_TLS") != "" {
+	if insecuretls != "" && insecuretls == "true" {
 		osAllowInsecureTLS = true
 	}
 	osAlertsIndex := os.Getenv("OS_ALERTS_INDEX")
